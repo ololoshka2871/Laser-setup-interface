@@ -32,19 +32,20 @@ struct Cli {
 }
 
 impl laser_setup_interface::ControlState for Cli {
-    fn valve(&self) -> Option<bool> {
+    fn valve(&self) -> Option<laser_setup_interface::ValveState> {
         self.vacuum
+            .map(|v| laser_setup_interface::ValveState::from_i32(v as i32).unwrap())
     }
 
     fn channel(&self) -> Option<u32> {
         self.channel
     }
 
-    fn camera(&self) -> Option<bool> {
+    fn camera(&self) -> Option<laser_setup_interface::CameraState> {
         if self.open {
-            Some(true)
+            Some(laser_setup_interface::CameraState::Open)
         } else if self.close {
-            Some(false)
+            Some(laser_setup_interface::CameraState::Close)
         } else {
             None
         }
@@ -52,10 +53,12 @@ impl laser_setup_interface::ControlState for Cli {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), laser_setup_interface::protobuf::Error> {
+async fn main() -> Result<(), laser_setup_interface::Error> {
+    env_logger::init();
+
     let mut args = Cli::parse();
 
-    println!("Starting laser-setup controller with args: {:?}", args);
+    log::debug!("Starting laser-setup controller with args: {:?}", args);
 
     let mut interface = laser_setup_interface::LaserSetup::new(
         &args.port,
@@ -66,8 +69,12 @@ async fn main() -> Result<(), laser_setup_interface::protobuf::Error> {
         panic!("Open and close flags are mutually exclusive");
     }
 
-    if Some(true) == args.vacuum {
-        args.close = true; // force close camera before vacuum on
+    let current_state = interface.read().await?;
+    log::info!("Current laser-setup state: {:?}", current_state);
+
+    if Some(true) == args.vacuum && current_state.camera == laser_setup_interface::CameraState::Open
+    {
+        panic!("Can't enable vacuum while camera is open!");
     }
 
     if args.open {
@@ -81,6 +88,7 @@ async fn main() -> Result<(), laser_setup_interface::protobuf::Error> {
     }
 
     let res = interface.write(&args).await?;
-    println!("Current laser-setup state: {:?}", res);
+    log::info!("New laser-setup state: {:?}", res);
+
     Ok(())
 }

@@ -5,30 +5,35 @@ use tokio_util::codec::Decoder;
 
 use futures::{SinkExt, StreamExt};
 
-pub mod protobuf;
-use protobuf::messages::{ActuatorState, ControlRequest, Status, ValveState};
+mod protobuf;
+use protobuf::messages::{ControlRequest, Status};
 
-use protobuf::{protobuf_md_codec::ProtobufMDCodec, Error};
+pub use protobuf::messages::ActuatorState as CameraState;
+pub use protobuf::messages::ValveState;
+pub use protobuf::Error;
+
+use protobuf::{protobuf_md_codec::ProtobufMDCodec};
+
 
 pub const CHANNELS_COUNT: u32 = 16;
 
 pub trait ControlState {
     /// Is vacuum?
-    fn valve(&self) -> Option<bool>;
+    fn valve(&self) -> Option<ValveState>;
     /// Channel number
     fn channel(&self) -> Option<u32>;
     /// Is camera opened?
-    fn camera(&self) -> Option<bool>;
+    fn camera(&self) -> Option<CameraState>;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CurrentControlState {
     /// Is vacuum enabled?
-    pub valve: bool,
+    pub valve: ValveState,
     /// Selected channel
     pub channel: u32,
     /// Is camera opened?
-    pub camera: bool,
+    pub camera: CameraState,
 }
 
 pub struct LaserSetup {
@@ -61,9 +66,9 @@ impl LaserSetup {
     ) -> CurrentControlState {
         if let Some(ctrl) = ctrl {
             CurrentControlState {
-                valve: ctrl.valve_state == ValveState::Vacuum as i32,
+                valve: ValveState::from_i32(ctrl.valve_state).unwrap(),
                 channel: ctrl.selected_channel,
-                camera: ctrl.actuator_state == ActuatorState::Open as i32,
+                camera: CameraState::from_i32(ctrl.actuator_state).unwrap(),
             }
         } else {
             panic!("No control field in response")

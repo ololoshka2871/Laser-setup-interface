@@ -21,8 +21,15 @@ impl Decoder for ProtobufMDCodec {
             }
         }
 
-        let msg = super::messages::Response::decode_length_delimited(src)?;
-        Ok(Some(msg))
+        match super::messages::Response::decode_length_delimited(src) {
+            Ok(msg) => return Ok(Some(msg)),
+            Err(e) => {
+                if e == prost::DecodeError::new("unexpected EOF") {
+                    return Ok(None);
+                }
+                return Err(e.into());
+            }
+        }
     }
 
     fn framed<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Sized>(

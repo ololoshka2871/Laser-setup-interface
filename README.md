@@ -1,4 +1,4 @@
-# библиотека управления устройством "Laser-setup"
+# Библиотека управления устройством "Laser-setup"
 [Laser-setup](https://github.com/ololoshka2871/Laser-setup)
 
 ## Протокол обмена данными

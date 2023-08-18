@@ -16,18 +16,29 @@ impl Decoder for ProtobufMDCodec {
             if src.is_empty() {
                 return Ok(None);
             }
-            if src.get_u8() == super::messages::Info::Magick as u8 {
+            
+            if src[0] == super::messages::Info::Magick as u8 {
                 break;
+            } else {
+                src.advance(1);
             }
         }
 
-        match super::messages::Response::decode_length_delimited(src) {
-            Ok(msg) => return Ok(Some(msg)),
+        let remaning = src.remaining();
+        let mut buf: BytesMut = src.clone();
+        buf.advance(1); // skip magick
+        
+        match super::messages::Response::decode_length_delimited(&mut buf) {
+            Ok(msg) => {
+                src.advance(remaning - buf.remaining());
+                Ok(Some(msg))
+            }
             Err(e) => {
-                if e == prost::DecodeError::new("unexpected EOF") {
-                    return Ok(None);
+                if (e == prost::DecodeError::new("buffer underflow")) || buf.is_empty() {
+                    Ok(None)
+                } else {
+                    Err(e.into())
                 }
-                return Err(e.into());
             }
         }
     }

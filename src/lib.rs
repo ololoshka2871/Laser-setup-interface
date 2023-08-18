@@ -1,5 +1,8 @@
+#![feature(async_fn_in_trait, impl_trait_projections)]
+
 use std::time::Duration;
 
+use embedded_hal_async::i2c::ErrorKind;
 use tokio_serial::SerialPortBuilderExt;
 use tokio_util::codec::Decoder;
 
@@ -12,10 +15,11 @@ pub use protobuf::messages::ActuatorState as CameraState;
 pub use protobuf::messages::ValveState;
 pub use protobuf::Error;
 
-use protobuf::{protobuf_md_codec::ProtobufMDCodec};
-
+use protobuf::protobuf_md_codec::ProtobufMDCodec;
 
 pub const CHANNELS_COUNT: u32 = 16;
+
+pub use embedded_hal_async::i2c::I2c;
 
 pub trait ControlState {
     /// Is vacuum?
@@ -39,6 +43,8 @@ pub struct CurrentControlState {
 pub struct LaserSetup {
     io: tokio_util::codec::Framed<tokio_serial::SerialStream, ProtobufMDCodec>,
     timeout: Duration,
+
+    selected_i2c_bus: u32,
 }
 
 impl LaserSetup {
@@ -49,6 +55,7 @@ impl LaserSetup {
         Self {
             io: ProtobufMDCodec.framed(port),
             timeout,
+            selected_i2c_bus: 0,
         }
     }
 
@@ -112,5 +119,131 @@ impl LaserSetup {
             Status::Ok => Ok(Self::decode_current_state(&resp.control)),
             e => Err(Error::Protocol(e)),
         }
+    }
+
+    pub fn select_i2c_bus(&mut self, bus_id: u32) {
+        self.selected_i2c_bus = bus_id;
+    }
+}
+
+impl embedded_hal_async::i2c::ErrorType for LaserSetup {
+    type Error = Error;
+}
+
+impl I2c for LaserSetup {
+    async fn transaction(
+        &mut self,
+        address: u8,
+        operations: &mut [embedded_hal_async::i2c::Operation<'_>],
+    ) -> Result<(), Self::Error> {
+        use crate::protobuf::messages::{
+            i2c_response::Response, i2c_result::Operation, I2cOperation, I2cResult,
+        };
+        use protobuf::messages::i2c_operation::Operation as I2cOperationType;
+
+        fn status2_err(status: i32) -> Result<(), Error> {
+            match I2cResultCode::from_i32(status).unwrap() {
+                I2cResultCode::I2cInvalidBus => Err(Error::I2C(ErrorKind::Bus)),
+                I2cResultCode::I2cTooLongData => Err(Error::I2C(ErrorKind::Overrun)),
+                I2cResultCode::I2cNak => Err(Error::I2C(ErrorKind::NoAcknowledge(
+                    embedded_hal_async::i2c::NoAcknowledgeSource::Unknown,
+                ))),
+                _ => Ok(()),
+            }
+        }
+
+        use protobuf::messages::I2cResultCode;
+
+        let mut req = protobuf::new_request();
+
+        let req_operations: Vec<I2cOperation> = operations
+            .into_iter()
+            .map(|o| match o {
+                embedded_hal_async::i2c::Operation::Write(w) => I2cOperation {
+                    operation: Some(I2cOperationType::Write(
+                        protobuf::messages::I2cWriteRequest {
+                            address: address as u32,
+                            data: w.to_vec(),
+                        },
+                    )),
+                },
+                embedded_hal_async::i2c::Operation::Read(r) => I2cOperation {
+                    operation: Some(I2cOperationType::Read(protobuf::messages::I2cReadRequest {
+                        address: address as u32,
+                        length: r.len() as u32,
+                    })),
+                },
+            })
+            .collect();
+
+        let req_len = req_operations.len();
+
+        let req_sequence = protobuf::messages::I2cRequest {
+            request: Some(protobuf::messages::i2c_request::Request::Sequence(
+                protobuf::messages::I2cSequence {
+                    bus: self.selected_i2c_bus,
+                    address: address as u32,
+                    operations: req_operations,
+                },
+            )),
+        };
+
+        req.i2c = Some(req_sequence);
+
+        self.io.send(req).await?;
+        let resp = self.read_responce().await?;
+
+        match Status::from_i32(resp.global_status).unwrap() {
+            Status::Ok => {}
+            Status::I2c => return Err(Error::I2C(ErrorKind::Bus)),
+            e => return Err(Error::Protocol(e)),
+        }
+
+        match resp.i2c {
+            Some(protobuf::messages::I2cResponse {
+                response:
+                    Some(Response::Sequence(protobuf::messages::I2cSequenceResult {
+                        operations: res_operations,
+                        bus,
+                        address,
+                    })),
+            }) => {
+                if req_len != res_operations.len()
+                    || bus != self.selected_i2c_bus
+                    || address != address as u32
+                {
+                    return Err(Error::Protocol(Status::I2c));
+                }
+
+                for v in operations.iter_mut().zip(res_operations.iter()) {
+                    match v {
+                        (
+                            embedded_hal_async::i2c::Operation::Read(buf),
+                            I2cResult {
+                                operation:
+                                    Some(Operation::Read(protobuf::messages::I2cReadResponse {
+                                        data,
+                                        status,
+                                    })),
+                            },
+                        ) => {
+                            status2_err(*status)?;
+                            buf.copy_from_slice(data);
+                        }
+                        (
+                            embedded_hal_async::i2c::Operation::Write(_),
+                            I2cResult {
+                                operation: Some(Operation::Write(status)),
+                            },
+                        ) => {
+                            status2_err(*status)?;
+                        }
+                        _ => return Err(Error::Protocol(Status::I2c)),
+                    }
+                }
+            }
+            _ => return Err(Error::Protocol(Status::I2c)),
+        }
+        Ok(())
     }
 }

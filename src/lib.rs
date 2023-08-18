@@ -1,4 +1,4 @@
-#![feature(async_fn_in_trait, impl_trait_projections)]
+#![feature(async_fn_in_trait)]
 
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ use protobuf::protobuf_md_codec::ProtobufMDCodec;
 
 pub const CHANNELS_COUNT: u32 = 16;
 
-pub use embedded_hal_async::i2c::I2c;
+pub use embedded_hal_async::i2c::{Operation, I2c};
 
 pub trait ControlState {
     /// Is vacuum?

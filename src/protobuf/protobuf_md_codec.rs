@@ -61,7 +61,6 @@ impl Encoder<Request> for ProtobufMDCodec {
         buf.put_u8(super::messages::Info::Magick as u8);
 
         req_type.encode_length_delimited(buf)?;
-        req_type.encode(buf)?;
 
         Ok(())
     }

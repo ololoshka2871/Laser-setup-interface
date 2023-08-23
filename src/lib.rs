@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use embedded_hal_async::i2c::ErrorKind;
+use protobuf::messages::i2c_request;
 use tokio_serial::SerialPortBuilderExt;
 use tokio_util::codec::Decoder;
 
@@ -19,7 +20,7 @@ use protobuf::protobuf_md_codec::ProtobufMDCodec;
 
 pub const CHANNELS_COUNT: u32 = 16;
 
-pub use embedded_hal_async::i2c::{Operation, I2c};
+pub use embedded_hal_async::i2c::{I2c, Operation};
 
 pub trait ControlState {
     /// Is vacuum?
@@ -38,6 +39,12 @@ pub struct CurrentControlState {
     pub channel: u32,
     /// Is camera opened?
     pub camera: CameraState,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct I2CBus {
+    pub id: u32,
+    pub speed: u32,
 }
 
 pub struct LaserSetup {
@@ -124,6 +131,42 @@ impl LaserSetup {
     pub fn select_i2c_bus(&mut self, bus_id: u32) {
         self.selected_i2c_bus = bus_id;
     }
+
+    pub async fn enumerate_i2c_buses(&mut self) -> Result<Vec<I2CBus>, Error> {
+        let mut req = protobuf::new_request();
+
+        let mut i2c_request = protobuf::messages::I2cRequest::default();
+        i2c_request.request = Some(i2c_request::Request::Enumerate(
+            protobuf::messages::Empty {},
+        ));
+
+        req.i2c.replace(i2c_request);
+
+        self.io.send(req).await?;
+        let resp = self.read_responce().await?;
+
+        if resp.global_status != Status::Ok as i32 {
+            return Err(Error::Protocol(
+                Status::from_i32(resp.global_status).unwrap(),
+            ));
+        }
+
+        match resp.i2c {
+            Some(protobuf::messages::I2cResponse {
+                response:
+                    Some(protobuf::messages::i2c_response::Response::Enumerate(
+                        protobuf::messages::I2cEnumerateResponse { buses },
+                    )),
+            }) => Ok(buses
+                .into_iter()
+                .map(|b| I2CBus {
+                    id: b.bus,
+                    speed: b.max_speed,
+                })
+                .collect()),
+            _ => Err(Error::Protocol(Status::I2c)),
+        }
+    }
 }
 
 impl embedded_hal_async::i2c::ErrorType for LaserSetup {
@@ -195,7 +238,30 @@ impl I2c for LaserSetup {
 
         match Status::from_i32(resp.global_status).unwrap() {
             Status::Ok => {}
-            Status::I2c => return Err(Error::I2C(ErrorKind::Bus)),
+            Status::I2c => {
+                if let Some(r) = resp.i2c {
+                    if let Some(crate::protobuf::messages::i2c_response::Response::Sequence(s)) =
+                        r.response
+                    {
+                        let is_nak = s.operations.iter().any(|o| match o.operation {
+                            Some(Operation::Write(status)) => {
+                                status == I2cResultCode::I2cNak as i32
+                            }
+                            Some(Operation::Read(protobuf::messages::I2cReadResponse {
+                                status,
+                                ..
+                            })) => status == I2cResultCode::I2cNak as i32,
+                            _ => false,
+                        });
+                        if is_nak {
+                            return Err(Error::I2C(ErrorKind::NoAcknowledge(
+                                embedded_hal_async::i2c::NoAcknowledgeSource::Unknown,
+                            )));
+                        }
+                    }
+                }
+                return Err(Error::I2C(ErrorKind::Bus));
+            }
             e => return Err(Error::Protocol(e)),
         }
 

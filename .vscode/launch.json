@@ -8,13 +8,64 @@
             "type": "lldb",
             "request": "launch",
             "name": "Launch",
-            "program": "target/debug/examples/cli_controller.exe",
             "args": [
                 "--port", "COM9"
             ],
             "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_LOG": "debug"
+            }, "cargo": {
+                "args": [
+                    "build",
+                    "--example=cli-controller"
+                ],
+                "filter": {
+                    "kind": "example"
+                }
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Enumerate buses",
+            "args": [
+                "--port", "COM9",
+                "-L"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_LOG": "debug"
+            },
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=i2c-detect"
+                ],
+                "filter": {
+                    "kind": "example"
+                }
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Detect 0",
+            "args": [
+                "--port", "COM9",
+                "-B", "0"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_LOG": "debug"
+            },
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=i2c-detect"
+                ],
+                "filter": {
+                    "kind": "example"
+                }
             }
         }
     ]

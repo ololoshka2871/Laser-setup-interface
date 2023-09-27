@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Launch",
+            "name": "cli-controller",
             "args": [
                 "--port", "COM9"
             ],
@@ -62,6 +62,27 @@
                 "args": [
                     "build",
                     "--example=i2c-detect"
+                ],
+                "filter": {
+                    "kind": "example"
+                }
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Read freq",
+            "args": [
+                "-P", "COM4",
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_LOG": "debug"
+            },
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=freq-reader"
                 ],
                 "filter": {
                     "kind": "example"

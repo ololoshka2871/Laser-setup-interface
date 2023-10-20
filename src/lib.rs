@@ -12,7 +12,7 @@ pub use protobuf::messages::ActuatorState as CameraState;
 pub use protobuf::messages::ValveState;
 pub use protobuf::Error;
 
-use protobuf::{protobuf_md_codec::ProtobufMDCodec};
+use protobuf::protobuf_md_codec::ProtobufMDCodec;
 
 
 pub const CHANNELS_COUNT: u32 = 16;

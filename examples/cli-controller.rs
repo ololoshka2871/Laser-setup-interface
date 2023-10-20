@@ -7,7 +7,7 @@ use laser_setup_interface;
 #[allow(non_snake_case)]
 struct Cli {
     /// Serial port name
-    #[clap(short, long)]
+    #[clap(short('P'), long)]
     port: String,
 
     /// Timeout in milliseconds

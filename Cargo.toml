@@ -1,6 +1,6 @@
 [package]
 name = "laser-setup-interface"
-version = "0.1.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["ololoshka2871"]
 readme = "README.md"
@@ -18,6 +18,8 @@ log = "0.4"
 env_logger = "0.10"
 
 prost = "0.11"
+
+embedded-hal-async = { git = "https://github.com/rust-embedded/embedded-hal" }
 
 [lib]
 name = "laser_setup_interface"
